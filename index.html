@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Leitor de PDFs - Simples</title>
+  <style>
+    :root{--bg:#0f1724;--panel:#0b1220;--muted:#94a3b8;--accent:#60a5fa}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Helvetica,Arial;background:var(--bg);color:#e6eef8}
+    .app{display:grid;grid-template-columns:320px 1fr;min-height:100vh}
+    .sidebar{background:var(--panel);padding:18px;border-right:1px solid rgba(255,255,255,0.03);}
+    h1{font-size:18px;margin:0 0 12px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    button,input[type=file]{background:#061226;color:inherit;border:1px solid rgba(255,255,255,0.04);padding:8px 10px;border-radius:8px;cursor:pointer}
+    .search{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);margin-bottom:12px;background:transparent;color:inherit}
+    .list{overflow:auto;max-height:calc(100vh - 220px);padding-right:6px}
+    .item{padding:8px;border-radius:6px;margin-bottom:6px;cursor:pointer;background:transparent}
+    .item:hover{background:rgba(255,255,255,0.03)}
+    .item.active{background:linear-gradient(90deg, rgba(96,165,250,0.12), rgba(96,165,250,0.06));border:1px solid rgba(96,165,250,0.08)}
+    .meta{font-size:12px;color:var(--muted)}
+    .viewer{display:flex;flex-direction:column}
+    .viewer .topbar{display:flex;align-items:center;gap:8px;padding:12px;border-bottom:1px solid rgba(255,255,255,0.03);background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent)}
+    .viewer iframe{flex:1;border:0;width:100%;height:calc(100vh - 72px)}
+    .small{font-size:13px}
+    a.link{color:var(--accent);text-decoration:none}
+    .hint{font-size:13px;color:var(--muted);margin-top:8px}
+    code{background:rgba(255,255,255,0.02);padding:2px 6px;border-radius:4px}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>Leitor de PDFs</h1>
+      <div class="controls">
+        <label>
+          <input id="dirInput" type="file" webkitdirectory directory multiple style="display:none">
+          <button id="btnSelect">Selecionar pasta</button>
+        </label>
+        <button id="btnRandom">Abrir aleatório</button>
+        <button id="btnPrev">Anterior</button>
+        <button id="btnNext">Próximo</button>
+      </div>
+
+      <input id="search" class="search" placeholder="Pesquisar nome do arquivo..." />
+      <div class="list" id="fileList" aria-live="polite"></div>
+    </aside>
+
+    <main class="viewer">
+      <div class="topbar">
+        <div id="fileInfo" class="small">Nenhum PDF carregado.</div>
+        <div style="flex:1"></div>
+        <a id="downloadLink" class="link" href="#" download target="_blank" style="display:none">Download</a>
+      </div>
+      <iframe id="pdfViewer" title="Visualizador de PDF"></iframe>
+    </main>
+  </div>
+
+  <script>
+    const state = { files: [], index: -1 };
+    const fileListEl = document.getElementById('fileList');
+    const pdfViewer = document.getElementById('pdfViewer');
+    const fileInfo = document.getElementById('fileInfo');
+    const downloadLink = document.getElementById('downloadLink');
+
+    function renderList(filter='') {
+      fileListEl.innerHTML = '';
+      state.files.forEach((f,i)=>{
+        if(filter && !f.name.toLowerCase().includes(filter.toLowerCase())) return;
+        const div = document.createElement('div');
+        div.className = 'item' + (i===state.index ? ' active' : '');
+        const name = document.createElement('div');
+        name.textContent = f.name;
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.textContent = f.origin === 'client' ? 'local' : 'web';
+        div.appendChild(name);
+        div.appendChild(meta);
+        div.onclick = ()=> openAt(i);
+        fileListEl.appendChild(div);
+      });
+      if(state.files.length===0) fileListEl.innerHTML = '<div class="meta">Nenhum PDF encontrado.</div>';
+    }
+
+    function openAt(i){
+      if(i<0 || i>=state.files.length) return;
+      state.index = i;
+      const f = state.files[i];
+      pdfViewer.src = f.url;
+      fileInfo.textContent = `${i+1} / ${state.files.length} — ${f.name}`;
+      downloadLink.style.display = 'inline';
+      downloadLink.href = f.url;
+      downloadLink.download = f.name;
+      renderList(document.getElementById('search').value);
+    }
+
+    function openRandom(){ if(state.files.length===0) return; openAt(Math.floor(Math.random()*state.files.length)); }
+    function next(){ if(state.files.length===0) return; openAt((state.index+1) % state.files.length); }
+    function prev(){ if(state.files.length===0) return; openAt((state.index-1 + state.files.length) % state.files.length); }
+
+    document.getElementById('btnSelect').addEventListener('click', ()=> document.getElementById('dirInput').click());
+    document.getElementById('dirInput').addEventListener('change', (ev)=>{
+      const files = Array.from(ev.target.files || []);
+      const pdfs = files.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+      state.files.filter(f=>f.origin==='client').forEach(f=>{ if(f._objUrl) URL.revokeObjectURL(f._objUrl) });
+      state.files = state.files.filter(f=>f.origin!=='client');
+      pdfs.forEach(f=>{
+        const obj = URL.createObjectURL(f);
+        state.files.push({ name: f.name, url: obj, origin: 'client', _objUrl: obj });
+      });
+      renderList(document.getElementById('search').value);
+      if(state.files.length>0 && state.index===-1) openAt(0);
+    });
+
+    document.getElementById('search').addEventListener('input', (e)=> renderList(e.target.value));
+    document.getElementById('btnRandom').addEventListener('click', openRandom);
+    document.getElementById('btnNext').addEventListener('click', next);
+    document.getElementById('btnPrev').addEventListener('click', prev);
+
+    // Modo GitHub Pages: tenta ler pdfs/pdfs.json (array de nomes). Se existir, monta lista com /pdfs/<nome>
+    async function tryLoadPdfList(){
+      try{
+        const res = await fetch('pdfs/pdfs.json', {cache:'no-store'});
+        if(!res.ok) return;
+        const list = await res.json();
+        if(!Array.isArray(list) || list.length===0) return;
+        list.forEach(name => state.files.push({
+          name,
+          url: `pdfs/${encodeURIComponent(name)}`,
+          origin: 'web'
+        }));
+        renderList();
+        if(state.index===-1) openAt(0);
+      }catch(e){
+        // silencioso — modo cliente continuará disponível
+        console.info('pdfs.json não encontrado ou erro ao carregar (modo cliente disponível).');
+      }
+    }
+
+    tryLoadPdfList();
+
+    window.addEventListener('beforeunload', ()=>{
+      state.files.filter(f=>f.origin==='client' && f._objUrl).forEach(f=> URL.revokeObjectURL(f._objUrl));
+    });
+  </script>
+</body>
+</html>
